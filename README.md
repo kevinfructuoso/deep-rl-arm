@@ -6,14 +6,14 @@ This project is based on the Nvidia open source project "jetson-reinforcement" d
 1. Have any part of the robot arm touch the object of interest, with at least a 90% accuracy.
 2. Have only the gripper base of the robot arm touch the object, with at least a 80% accuracy.
 
-## Building from Source (Nvidia Jetson TX2)
+## Building from Source
 
 Run the following commands from terminal to build the project from source:
 
 ``` bash
 $ sudo apt-get install cmake
-$ git clone http://github.com/udacity/RoboND-DeepRL-Project
-$ cd RoboND-DeepRL-Project
+$ git clone https://github.com/kevinfructuoso/deep-rl-arm.git
+$ cd deep-rl-arm
 $ git submodule update --init
 $ mkdir build
 $ cd build
@@ -30,7 +30,7 @@ To make sure that the reinforcement learners are still functioning properly from
 To test the textual [`catch`](samples/catch/catch.cpp) sample, run the following executable from the terminal.  After around 100 episodes or so, the agent should start winning the episodes nearly 100% of the time:  
 
 ``` bash
-$ cd RoboND-DeepRL-Project/build/aarch64/bin
+$ cd deep-rl-arm/build/x86_64/bin
 $ ./catch 
 [deepRL]  input_width:    64
 [deepRL]  input_height:   64
@@ -112,10 +112,11 @@ Internally, [`catch`](samples/catch/catch.cpp) is using the [`dqnAgent`](c/dqnAg
 To get started with the project environment, run the following:
 
 ``` bash
-$ cd RoboND-DeepRL-Project/build/aarch64/bin
+$ cd deep-rl-arm/build/x86_64/bin
+$ chmod 755 gazebo-arm.sh
 $ ./gazebo-arm.sh
 ```
 
-<img src="https://github.com/dusty-nv/jetson-reinforcement/raw/master/docs/images/gazebo_arm.jpg">
+<p align="center"><img src="./docs/images/gazebo_arm.jpg"></p>
 
 The plugins which hook the learning into the simulation are located in the `gazebo/` directory of the repo. The RL agent and the reward functions are to be defined in [`ArmPlugin.cpp`](gazebo/ArmPlugin.cpp).
