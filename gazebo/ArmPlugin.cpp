@@ -71,6 +71,8 @@
 // Lock base rotation DOF (Add dof in header file if off)
 #define LOCKBASE true
 
+// Set alpha for average distance delta calculation
+#define ALPHA 0.9f
 
 namespace gazebo
 {
@@ -160,7 +162,7 @@ bool ArmPlugin::createAgent()
     // Create DQN Agent
     dqnAgent* agent = dqnAgent::Create(INPUT_WIDTH, INPUT_HEIGHT, INPUT_CHANNELS, DOF, 
                           OPTIMIZER, LEARNING_RATE, REPLAY_MEMORY, BATCH_SIZE, GAMMA, EPS_START,
-                          EPS_END,  EPS_DECAY, USE_LSTM, LSTM_SIZE, ALLOW_RANDOM, DEBUG)
+                          EPS_END,  EPS_DECAY, USE_LSTM, LSTM_SIZE, ALLOW_RANDOM, DEBUG);
 
     if( !agent )
     {
@@ -602,7 +604,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
                 const float distDelta  = lastGoalDistance - distGoal;
 
                 // compute the smoothed moving average of the delta of the distance to the goal
-                avgGoalDelta  = ( avgGoalDelta * alpha) + ( distDelta * ( 1 - alpha ) );
+                avgGoalDelta  = ( avgGoalDelta * ALPHA) + ( distDelta * ( 1 - ALPHA ) );
                 rewardHistory = REWARD_LOSS * abs( avgGoalDelta - distDelta );
                 newReward     = true;    
             }
