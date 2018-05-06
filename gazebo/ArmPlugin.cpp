@@ -157,13 +157,10 @@ bool ArmPlugin::createAgent()
     if( agent != NULL )
         return true;
 
-            
-    /*
-    / TODO - Create DQN Agent
-    /
-    */
-    
-    agent = NULL;
+    // Create DQN Agent
+    dqnAgent* agent = dqnAgent::Create(INPUT_WIDTH, INPUT_HEIGHT, INPUT_CHANNELS, DOF, 
+                          OPTIMIZER, LEARNING_RATE, REPLAY_MEMORY, BATCH_SIZE, GAMMA, EPS_START,
+                          EPS_END,  EPS_DECAY, USE_LSTM, LSTM_SIZE, ALLOW_RANDOM, DEBUG)
 
     if( !agent )
     {
@@ -308,19 +305,21 @@ bool ArmPlugin::updateAgent()
     if(DEBUG){printf("ArmPlugin - agent selected action %i\n", action);}
 
 
-
 #if VELOCITY_CONTROL
-    // if the action is even, increase the joint position by the delta parameter
-    // if the action is odd,  decrease the joint position by the delta parameter
 
-        
-    /*
-    / TODO - Increase or decrease the joint velocity based on whether the action is even or odd
-    /
-    */
+    float velocity = 0.0;
     
-    float velocity = 0.0; // TODO - Set joint velocity based on whether action is even or odd.
+    // Increase the joint velocity based on whether the action is even or odd
+    if( action % 2 == 0 )
+    {
+        velocity = vel[action/2] + actionVelDelta;
+    }
+    else
+    {
+        velocity = vel[action/2] - actionVelDelta;
+    }
 
+    // limit velocity to the specified range
     if( velocity < VELOCITY_MIN )
         velocity = VELOCITY_MIN;
 
@@ -329,6 +328,7 @@ bool ArmPlugin::updateAgent()
 
     vel[action/2] = velocity;
     
+    // update joint data based on velocity
     for( uint32_t n=0; n < DOF; n++ )
     {
         ref[n] += vel[n];
@@ -344,13 +344,19 @@ bool ArmPlugin::updateAgent()
             vel[n] = 0.0f;
         }
     }
-#else
+#else   //Position control
     
-    /*
-    / TODO - Increase or decrease the joint position based on whether the action is even or odd
-    /
-    */
-    float joint = 0.0; // TODO - Set joint position based on whether action is even or odd.
+    float joint = 0.0;
+
+    //Increase or decrease the joint position based on whether the action is even or odd    
+    if( action % 2 == 0 )
+    {
+        joint = ref[action/2] + actionJointDelta;
+    }
+    else
+    {
+        joint = ref[action/2] - actionJointDelta;
+    }
 
     // limit the joint to the specified range
     if( joint < JOINT_MIN )
@@ -569,32 +575,24 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
         const math::Box& gripBBox = gripper->GetBoundingBox();
         const float groundContact = 0.05f;
         
-        /*
-        / TODO - set appropriate Reward for robot hitting the ground.
-        /
-        */
+        //set appropriate Reward for robot hitting the ground.
         
+        bool checkGroundContact = gripBBox.max.x <= groundContact or gripBBox.min.x <= groundContact;
         
-        /*if(checkGroundContact)
+        if(checkGroundContact)
         {
                         
             if(DEBUG){printf("GROUND CONTACT, EOE\n");}
 
-            rewardHistory = None;
-            newReward     = None;
-            endEpisode    = None;
+            rewardHistory = 5 * REWARD_LOSS;
+            newReward     = true;
+            endEpisode    = true;
         }
-        */
         
-        /*
-        / TODO - Issue an interim reward based on the distance to the object
-        /
-        */ 
-        
-        /*
+        //Issue an interim reward based on the distance to the object
         if(!checkGroundContact)
         {
-            const float distGoal = 0; // compute the reward from distance to the goal
+            const float distGoal = BoxDistance(propBBox, gripBBox); // compute the reward from distance to the goal
 
             if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
 
@@ -604,13 +602,13 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
                 const float distDelta  = lastGoalDistance - distGoal;
 
                 // compute the smoothed moving average of the delta of the distance to the goal
-                avgGoalDelta  = 0.0;
-                rewardHistory = None;
-                newReward     = None;    
+                avgGoalDelta  = ( avgGoalDelta * alpha) + ( distDelta * ( 1 - alpha ) );
+                rewardHistory = REWARD_LOSS * abs( avgGoalDelta - distDelta );
+                newReward     = true;    
             }
 
             lastGoalDistance = distGoal;
-        } */
+        }
     }
 
     // issue rewards and train DQN
