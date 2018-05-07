@@ -1,6 +1,6 @@
 /* 
  * Author - Dustin Franklin (Nvidia Jetson Developer)
- * Modified by - Sahil Juneja, Kyle Stewart-Frantz
+ * Modified by - Sahil Juneja, Kyle Stewart-Frantz, Kevin Fructuoso
  *
  */
 
@@ -21,7 +21,6 @@
 #define VELOCITY_MAX  0.2f
 
 // Define DQN API Settings
-
 #define INPUT_CHANNELS 3
 #define ALLOW_RANDOM true
 #define DEBUG_DQN false
@@ -30,27 +29,19 @@
 #define EPS_END 0.05f
 #define EPS_DECAY 200
 
-/*
-/ TODO - Tune the following hyperparameters
-/
-*/
-
-#define INPUT_WIDTH   512
-#define INPUT_HEIGHT  512
-#define OPTIMIZER "None"
-#define LEARNING_RATE 0.0f
+// Define tuning hyperparameters
+#define INPUT_WIDTH   64
+#define INPUT_HEIGHT  64
+#define OPTIMIZER "RMSprop"
+#define LEARNING_RATE 0.01f
 #define REPLAY_MEMORY 10000
 #define BATCH_SIZE 8
-#define USE_LSTM false
+#define USE_LSTM true
 #define LSTM_SIZE 32
 
-/*
-/ TODO - Define Reward Parameters
-/
-*/
-
-#define REWARD_WIN  0.0f
-#define REWARD_LOSS -0.0f
+//Define Reward Parameters
+#define REWARD_WIN  100.0f
+#define REWARD_LOSS -1.0f
 
 // Define Object Names
 #define WORLD_NAME "arm_world"
@@ -66,7 +57,7 @@
 #define ANIMATION_STEPS 1000
 
 // Set Debug Mode
-#define DEBUG false
+#define DEBUG true
 
 // Lock base rotation DOF (Add dof in header file if off)
 #define LOCKBASE true
@@ -104,7 +95,7 @@ ArmPlugin::ArmPlugin() : ModelPlugin(), cameraNode(new gazebo::transport::Node()
     inputBufferSize  = 0;
     inputRawWidth    = 0;
     inputRawHeight   = 0;
-    actionJointDelta = 0.15f;
+    actionJointDelta = 0.1f;
     actionVelDelta   = 0.1f;
     maxEpisodeLength = 100;
     episodeFrames    = 0;
@@ -135,7 +126,7 @@ void ArmPlugin::Load(physics::ModelPtr _parent, sdf::ElementPtr /*_sdf*/)
     // Create and subscribe to our node for camera communication
     cameraNode->Init();
     
-    gazebo::transport::SubscriberPtr cameraSub = cameraNode->Subscribe(
+    cameraSub = cameraNode->Subscribe(
         "/gazebo/arm_world/camera/link/camera/image", 
         &ArmPlugin::onCameraMsg,
         this);
@@ -143,7 +134,7 @@ void ArmPlugin::Load(physics::ModelPtr _parent, sdf::ElementPtr /*_sdf*/)
     // Create and subscribe to our node for collision detection
     collisionNode->Init();
    
-    gazebo::transport::SubscriberPtr collisionSub = collisionNode->Subscribe(
+    collisionSub = collisionNode->Subscribe(
         "/gazebo/arm_world/tube/tube_link/my_contact",
         &ArmPlugin::onCollisionMsg,
         this);
@@ -160,7 +151,7 @@ bool ArmPlugin::createAgent()
         return true;
 
     // Create DQN Agent
-    dqnAgent* agent = dqnAgent::Create(INPUT_WIDTH, INPUT_HEIGHT, INPUT_CHANNELS, DOF, 
+    agent = dqnAgent::Create(INPUT_WIDTH, INPUT_HEIGHT, INPUT_CHANNELS, DOF, 
                           OPTIMIZER, LEARNING_RATE, REPLAY_MEMORY, BATCH_SIZE, GAMMA, EPS_START,
                           EPS_END,  EPS_DECAY, USE_LSTM, LSTM_SIZE, ALLOW_RANDOM, DEBUG);
 
@@ -231,7 +222,7 @@ void ArmPlugin::onCameraMsg(ConstImageStampedPtr &_msg)
     memcpy(inputBuffer[0], _msg->image().data().c_str(), inputBufferSize);
     newState = true;
 
-    if(DEBUG){printf("camera %i x %i  %i bpp  %i bytes\n", width, height, bpp, size);}
+    //if(DEBUG){printf("camera %i x %i  %i bpp  %i bytes\n", width, height, bpp, size);}
 
 }
 
@@ -247,33 +238,24 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
     for (unsigned int i = 0; i < contacts->contact_size(); ++i)
     {
         if( strcmp(contacts->contact(i).collision2().c_str(), COLLISION_FILTER) == 0 )
+        {
             continue;
+        }
 
         if(DEBUG){std::cout << "Collision between[" << contacts->contact(i).collision1()
                  << "] and [" << contacts->contact(i).collision2() << "]\n";}
 
-    
-        /*
-        / TODO - Check if there is collision between the arm and object, then issue learning reward
-        /
-        */
-        
-        /*
-        
-        if (collisionCheck)
+        // Check if there is collision between the arm and object, then issue learning reward
+        if (strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM) == 0 or strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM) == 0)
         {
-            rewardHistory = None;
-
-            newReward  = None;
-            endEpisode = None;
-
+            printf("Arm touched the robot - WIN!\n\n");
+            rewardHistory = REWARD_WIN;
+            newReward  = true;
+            endEpisode = true;
             return;
         }
-        */
-        
     }
 }
-
 
 // upon recieving a new frame, update the AI agent
 bool ArmPlugin::updateAgent()
@@ -304,7 +286,7 @@ bool ArmPlugin::updateAgent()
         return false;
     }
 
-    if(DEBUG){printf("ArmPlugin - agent selected action %i\n", action);}
+    //if(DEBUG){printf("ArmPlugin - agent selected action %i\n", action);}
 
 
 #if VELOCITY_CONTROL
@@ -447,7 +429,7 @@ bool ArmPlugin::updateJoints()
         // update the AI agent when new camera frame is ready
         episodeFrames++;
 
-        if(DEBUG){printf("episode frame = %i\n", episodeFrames);}
+        //if(DEBUG){printf("episode frame = %i\n", episodeFrames);}
 
         // reset camera ready flag
         newState = false;
@@ -575,16 +557,16 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 
         // get the bounding box for the gripper        
         const math::Box& gripBBox = gripper->GetBoundingBox();
-        const float groundContact = 0.05f;
+        const float groundContact = 0.02f;
         
         //set appropriate Reward for robot hitting the ground.
         
-        bool checkGroundContact = gripBBox.max.x <= groundContact or gripBBox.min.x <= groundContact;
+        bool checkGroundContact = gripBBox.min.z <= groundContact;
         
         if(checkGroundContact)
         {
                         
-            if(DEBUG){printf("GROUND CONTACT, EOE\n");}
+            printf("GROUND CONTACT, EOE\n");
 
             rewardHistory = 5 * REWARD_LOSS;
             newReward     = true;
@@ -596,7 +578,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
         {
             const float distGoal = BoxDistance(propBBox, gripBBox); // compute the reward from distance to the goal
 
-            if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
+            //if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
 
             
             if( episodeFrames > 1 )
@@ -605,7 +587,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 
                 // compute the smoothed moving average of the delta of the distance to the goal
                 avgGoalDelta  = ( avgGoalDelta * ALPHA) + ( distDelta * ( 1 - ALPHA ) );
-                rewardHistory = REWARD_LOSS * abs( avgGoalDelta - distDelta );
+                rewardHistory = REWARD_LOSS * 0.1 * abs( ( avgGoalDelta - distDelta )/avgGoalDelta );
                 newReward     = true;    
             }
 
@@ -616,7 +598,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
     // issue rewards and train DQN
     if( newReward && agent != NULL )
     {
-        if(DEBUG){printf("ArmPlugin - issuing reward %f, EOE=%s  %s\n", rewardHistory, endEpisode ? "true" : "false", (rewardHistory > 0.1f) ? "POS+" :(rewardHistory > 0.0f) ? "POS" : (rewardHistory < 0.0f) ? "    NEG" : "       ZERO");}
+        //if(DEBUG){printf("ArmPlugin - issuing reward %f, EOE=%s  %s\n", rewardHistory, endEpisode ? "true" : "false", (rewardHistory > 0.1f) ? "POS+" :(rewardHistory > 0.0f) ? "POS" : (rewardHistory < 0.0f) ? "    NEG" : "       ZERO");}
         agent->NextReward(rewardHistory, endEpisode);
 
         // reset reward indicator
