@@ -30,13 +30,13 @@
 #define EPS_DECAY 200
 
 // Define tuning hyperparameters
-#define INPUT_WIDTH   64
-#define INPUT_HEIGHT  64
+#define INPUT_WIDTH   128
+#define INPUT_HEIGHT  128
 #define OPTIMIZER "RMSprop"
-#define LEARNING_RATE 0.01f
+#define LEARNING_RATE 0.001f
 #define REPLAY_MEMORY 10000
-#define BATCH_SIZE 8
-#define USE_LSTM true
+#define BATCH_SIZE 32
+#define USE_LSTM false
 #define LSTM_SIZE 32
 
 //Define Reward Parameters
@@ -63,7 +63,7 @@
 #define LOCKBASE true
 
 // Set alpha for average distance delta calculation
-#define ALPHA 0.9f
+#define ALPHA 0.5f
 
 namespace gazebo
 {
@@ -529,7 +529,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
     if( maxEpisodeLength > 0 && episodeFrames > maxEpisodeLength )
     {
         printf("ArmPlugin - triggering EOE, episode has exceeded %i frames\n", maxEpisodeLength);
-        rewardHistory = REWARD_LOSS;
+        rewardHistory = REWARD_LOSS * 10.0;
         newReward     = true;
         endEpisode    = true;
     }
@@ -587,7 +587,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
 
                 // compute the smoothed moving average of the delta of the distance to the goal
                 avgGoalDelta  = ( avgGoalDelta * ALPHA) + ( distDelta * ( 1 - ALPHA ) );
-                rewardHistory = REWARD_LOSS * 0.1 * abs( ( avgGoalDelta - distDelta )/avgGoalDelta );
+                rewardHistory = REWARD_LOSS * 0.1 * abs( ( avgGoalDelta - distDelta) / avgGoalDelta );
                 newReward     = true;    
             }
 
