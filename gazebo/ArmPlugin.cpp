@@ -52,18 +52,22 @@
 #define COLLISION_FILTER "ground_plane::link::collision"
 #define COLLISION_ITEM   "tube::tube_link::tube_collision"
 #define COLLISION_POINT  "arm::gripperbase::gripper_link"
+#define COLLISION_MIDDLE "arm::gripper_middle::middle_collision"
 
 // Animation Steps
 #define ANIMATION_STEPS 1000
 
 // Set Debug Mode
-#define DEBUG true
+#define DEBUG false
 
 // Lock base rotation DOF (Add dof in header file if off)
 #define LOCKBASE true
 
 // Set alpha for average distance delta calculation
 #define ALPHA 0.5f
+
+// Defines win condition; true = gripper base touches object; false = any part of arm touches object
+#define GOAL2 true
 
 namespace gazebo
 {
@@ -222,7 +226,7 @@ void ArmPlugin::onCameraMsg(ConstImageStampedPtr &_msg)
     memcpy(inputBuffer[0], _msg->image().data().c_str(), inputBufferSize);
     newState = true;
 
-    //if(DEBUG){printf("camera %i x %i  %i bpp  %i bytes\n", width, height, bpp, size);}
+    if(DEBUG){printf("camera %i x %i  %i bpp  %i bytes\n", width, height, bpp, size);}
 
 }
 
@@ -230,7 +234,7 @@ void ArmPlugin::onCameraMsg(ConstImageStampedPtr &_msg)
 // onCollisionMsg
 void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
 {
-    //if(DEBUG){printf("collision callback (%u contacts)\n", contacts->contact_size());}
+    if(DEBUG){printf("collision callback (%u contacts)\n", contacts->contact_size());}
 
     if( testAnimation )
         return;
@@ -245,14 +249,52 @@ void ArmPlugin::onCollisionMsg(ConstContactsPtr &contacts)
         if(DEBUG){std::cout << "Collision between[" << contacts->contact(i).collision1()
                  << "] and [" << contacts->contact(i).collision2() << "]\n";}
 
-        // Check if there is collision between the arm and object, then issue learning reward
-        if (strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM) == 0 or strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM) == 0)
+        //Check win condition is not only gripper base
+        if (!GOAL2)
         {
-            printf("Arm touched the robot - WIN!\n\n");
-            rewardHistory = REWARD_WIN;
-            newReward  = true;
-            endEpisode = true;
-            return;
+            // Check if there is collision between the arm and object, then issue appropriate learning reward
+            if ((strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM) == 0 || strcmp(contacts->contact(i).collision2().c_str(), COLLISION_ITEM) == 0))
+            {
+                printf("Arm touched the tube - WIN!\n\n");
+                rewardHistory = REWARD_WIN;
+                newReward  = true;
+                endEpisode = true;
+                return;
+            }
+        }
+        //Win condition is only gripper base
+        else
+        {
+            // Check both collision objects are tube and gripper base
+            if (strcmp(contacts->contact(i).collision1().c_str(), COLLISION_ITEM) == 0 && strcmp(contacts->contact(i).collision2().c_str(), COLLISION_POINT) == 0)
+            {
+                printf("Gripper base touched the tube - WIN!\n\n");
+                rewardHistory = REWARD_WIN;
+                newReward  = true;
+                endEpisode = true;
+                return;
+            }
+            // If it was not gripper base who collided, check if it was middle
+            else 
+            {
+                // If it was not the gripper middle, give extra loss to ensure it learns not to
+                if (strcmp(contacts->contact(i).collision2().c_str(), COLLISION_MIDDLE) != 0)
+                {
+                    printf("Not the gripper base or gripper middle that collided with the object - LOSS!\n\n");
+                    rewardHistory = REWARD_LOSS * 5.0;
+                }
+                // If gripper middle collides, give small reward to ensure it learns that is almost good
+                else
+                {
+                    printf("Gripper middle that collided with the object - LOSS!\n\n");
+                    rewardHistory = REWARD_WIN * 0.1;
+                }
+
+                // Trigger end of episode
+                newReward = true;
+                endEpisode = true;
+                return;
+            }
         }
     }
 }
@@ -286,7 +328,7 @@ bool ArmPlugin::updateAgent()
         return false;
     }
 
-    //if(DEBUG){printf("ArmPlugin - agent selected action %i\n", action);}
+    if(DEBUG){printf("ArmPlugin - agent selected action %i\n", action);}
 
 
 #if VELOCITY_CONTROL
@@ -429,7 +471,7 @@ bool ArmPlugin::updateJoints()
         // update the AI agent when new camera frame is ready
         episodeFrames++;
 
-        //if(DEBUG){printf("episode frame = %i\n", episodeFrames);}
+        if(DEBUG){printf("episode frame = %i\n", episodeFrames);}
 
         // reset camera ready flag
         newState = false;
@@ -529,7 +571,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
     if( maxEpisodeLength > 0 && episodeFrames > maxEpisodeLength )
     {
         printf("ArmPlugin - triggering EOE, episode has exceeded %i frames\n", maxEpisodeLength);
-        rewardHistory = REWARD_LOSS * 10.0;
+        rewardHistory = REWARD_LOSS * 20.0;
         newReward     = true;
         endEpisode    = true;
     }
@@ -578,7 +620,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
         {
             const float distGoal = BoxDistance(propBBox, gripBBox); // compute the reward from distance to the goal
 
-            //if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
+            if(DEBUG){printf("distance('%s', '%s') = %f\n", gripper->GetName().c_str(), prop->model->GetName().c_str(), distGoal);}
 
             
             if( episodeFrames > 1 )
@@ -598,7 +640,7 @@ void ArmPlugin::OnUpdate(const common::UpdateInfo& updateInfo)
     // issue rewards and train DQN
     if( newReward && agent != NULL )
     {
-        //if(DEBUG){printf("ArmPlugin - issuing reward %f, EOE=%s  %s\n", rewardHistory, endEpisode ? "true" : "false", (rewardHistory > 0.1f) ? "POS+" :(rewardHistory > 0.0f) ? "POS" : (rewardHistory < 0.0f) ? "    NEG" : "       ZERO");}
+        if(DEBUG){printf("ArmPlugin - issuing reward %f, EOE=%s  %s\n", rewardHistory, endEpisode ? "true" : "false", (rewardHistory > 0.1f) ? "POS+" :(rewardHistory > 0.0f) ? "POS" : (rewardHistory < 0.0f) ? "    NEG" : "       ZERO");}
         agent->NextReward(rewardHistory, endEpisode);
 
         // reset reward indicator
